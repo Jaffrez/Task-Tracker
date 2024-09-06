@@ -1,13 +1,14 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
-use task::{Status, Task, TaskVec};
+use task::Status;
 
 mod task;
+mod tui;
 
 pub fn parse_args() -> ArgMatches {
     let add_command = Command::new("add")
         .about("Add a task to the list")
-        .arg(Arg::new("name"))
-        .arg(Arg::new("description"));
+        .arg(Arg::new("name").required(true))
+        .arg(Arg::new("description").required(true));
     let del_command = Command::new("del")
         .about("Remove a task from the list")
         .arg(
@@ -22,6 +23,7 @@ pub fn parse_args() -> ArgMatches {
                 .required(true)
                 .value_parser(value_parser!(u64)),
         )
+        // * name和description参数至少需要一个
         .arg(
             Arg::new("name")
                 .short('n')
@@ -59,6 +61,7 @@ pub fn parse_args() -> ArgMatches {
             Arg::new("file")
                 .short('f')
                 .long("file")
+                .value_name("path")
                 .help("Customize the database path."),
         )
         .subcommand(add_command)

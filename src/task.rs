@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
+use rusqlite::Connection;
 use std::io::{Error, ErrorKind};
 
 #[derive(Debug, Clone)]
@@ -12,6 +13,7 @@ pub struct Task {
     updated: DateTime<Utc>,
 }
 
+#[allow(unused)]
 impl Task {
     pub fn new(id: u64, name: String, description: String) -> Self {
         Task {
@@ -64,7 +66,7 @@ impl Task {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum Status {
     Todo,
     Skip,
@@ -87,11 +89,13 @@ impl ValueEnum for Status {
     }
 }
 
+#[allow(unused)]
 pub struct TaskVec {
     tasks: Vec<Task>,
     next_id: u64,
 }
 
+#[allow(unused)]
 impl TaskVec {
     pub fn new() -> Self {
         TaskVec {
@@ -101,32 +105,116 @@ impl TaskVec {
     }
 
     pub fn from(path: &str) -> Self {
-        // TODO: 从数据库获取数据
-        todo!()
+        let mut result = TaskVec::new();
+        let conn = match Connection::open(path) {
+            Ok(conn) => conn,
+            Err(e) => panic!("Error: {}", e),
+        };
+        // * 如果不存在表则创建
+        conn.execute(
+            "create table if not exists tasks (
+                                id int primary key,
+                                name text,
+                                desc text,
+                                status text,
+                                created Date,
+                                updated Date)",
+            [],
+        );
+        // * 从数据库中获取数据并保存
+        let mut stmt = conn
+            .prepare("SELECT id, name, desc, status, created, updated FROM tasks")
+            .unwrap();
+        let task_iter = stmt
+            .query_map([], |row| {
+                Ok(Task {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    status: match row.get::<_, String>(3)?.as_str() {
+                        "todo" => Status::Todo,
+                        "skip" => Status::Skip,
+                        "in_progress" => Status::InProgress,
+                        "done" => Status::Done,
+                        _ => {
+                            return Err(rusqlite::Error::InvalidColumnType(
+                                3,
+                                "status".to_string(),
+                                rusqlite::types::Type::Text,
+                            ))
+                        }
+                    },
+                    created: row.get(4)?,
+                    updated: row.get(5)?,
+                })
+            })
+            .unwrap();
+
+        for task in task_iter {
+            if let Ok(task) = task {
+                result.tasks.push(task);
+            }
+        }
+
+        result.next_id = result.tasks.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+        result
     }
 
-    pub fn to(path: &str) {
-        // TODO: 存储数据到数据库
-        todo!()
+    pub fn to(&self, path: &str) {
+        let conn = match Connection::open(path) {
+            Ok(conn) => conn,
+            Err(e) => panic!("Error: {}", e),
+        };
+        // * 如果不存在表则创建
+        conn.execute(
+            "create table if not exists tasks (
+                                id int primary key,
+                                name text,
+                                desc text,
+                                status text,
+                                created Date
+                                updated Date)",
+            [],
+        );
+        // * 保存数据
+        conn.execute("DELETE FROM tasks", [])
+            .expect("Failed to clear tasks table");
+
+        for task in &self.tasks {
+            conn.execute(
+                "INSERT INTO tasks (id, name, desc, status, created, updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                (
+                    task.id(),
+                    task.name(),
+                    task.description(),
+                    task.status().to_possible_value().unwrap().get_name(),
+                    task.created().to_rfc3339(),
+                    task.updated().to_rfc3339(),
+                ),
+            )
+            .expect("Failed to insert task");
+        }
     }
 
     pub fn add(&mut self, name: &str, desc: &str) -> Option<&mut Task> {
         let task = Task::new(self.next_id, name.to_string(), desc.to_string());
         self.tasks.push(task);
         self.next_id += 1;
+        println!("Successfully added task, id: {}", self.next_id - 1);
         self.tasks.last_mut()
     }
 
     pub fn del(&mut self, id: u64) -> Task {
         let index = self.tasks.iter().position(|task| task.id() == id).unwrap();
+        println!("Successfully deleted task, id: {}", id);
         self.tasks.remove(index)
     }
 
     pub fn update(
         &mut self,
         id: u64,
-        name: Option<&str>,
-        desc: Option<&str>,
+        name: Option<&String>,
+        desc: Option<&String>,
     ) -> Result<&Task, Error> {
         let index = match self.tasks.iter().position(|task| task.id() == id) {
             Some(idx) => idx,
@@ -139,6 +227,7 @@ impl TaskVec {
         if let Some(desc) = desc {
             task.set_description(desc.to_string());
         }
+        println!("Successfully updated task, id: {}", id);
         Ok(task)
     }
 
@@ -149,16 +238,17 @@ impl TaskVec {
         };
         let task = self.tasks.get_mut(index).unwrap();
         task.set_status(status.clone());
+        println!("Successfully marked task, id: {}", id);
         Ok(task)
     }
 
-    pub fn list_by_status(&self, status: Option<&Status>) -> Vec<&Task> {
+    pub fn list_by_status(&self, status: Option<Status>) -> Vec<&Task> {
         match status {
             Some(s) => {
                 return self
                     .tasks
                     .iter()
-                    .filter(|task| task.status() == s)
+                    .filter(|task| *task.status() == s)
                     .collect();
             }
             None => {
