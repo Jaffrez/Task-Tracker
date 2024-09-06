@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use rusqlite::Connection;
+use std::fmt;
 use std::io::{Error, ErrorKind};
 
 #[derive(Debug, Clone)]
@@ -8,7 +9,7 @@ pub struct Task {
     id: u64,
     name: String,
     description: String,
-    status: Status,
+    status: TaskStatus,
     created: DateTime<Utc>,
     updated: DateTime<Utc>,
 }
@@ -20,7 +21,7 @@ impl Task {
             id,
             name,
             description,
-            status: Status::Todo,
+            status: TaskStatus::Todo,
             created: Utc::now(),
             updated: Utc::now(),
         }
@@ -38,7 +39,7 @@ impl Task {
         &self.description
     }
 
-    pub fn status(&self) -> &Status {
+    pub fn status(&self) -> &TaskStatus {
         &self.status
     }
 
@@ -60,31 +61,60 @@ impl Task {
         self.updated = Utc::now();
     }
 
-    pub fn set_status(&mut self, status: Status) {
+    pub fn set_status(&mut self, status: TaskStatus) {
         self.status = status;
         self.updated = Utc::now();
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum Status {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskStatus {
     Todo,
     Skip,
     InProgress,
     Done,
 }
 
-impl ValueEnum for Status {
+#[allow(unused)]
+impl TaskStatus {
+    pub fn from_str(s: &str) -> Option<&Self> {
+        match s {
+            "todo" => Some(&TaskStatus::Todo),
+            "skip" => Some(&TaskStatus::Skip),
+            "in_progress" => Some(&TaskStatus::InProgress),
+            "done" => Some(&TaskStatus::Done),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TaskStatus::Todo => write!(f, "todo"),
+            TaskStatus::Skip => write!(f, "skip"),
+            TaskStatus::InProgress => write!(f, "in_progress"),
+            TaskStatus::Done => write!(f, "done"),
+        }
+    }
+}
+
+impl ValueEnum for TaskStatus {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Status::Todo, Status::Skip, Status::InProgress, Status::Done]
+        &[
+            TaskStatus::Todo,
+            TaskStatus::Skip,
+            TaskStatus::InProgress,
+            TaskStatus::Done,
+        ]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
-            Status::Todo => Some(clap::builder::PossibleValue::new("todo")),
-            Status::Skip => Some(clap::builder::PossibleValue::new("skip")),
-            Status::InProgress => Some(clap::builder::PossibleValue::new("in_progress")),
-            Status::Done => Some(clap::builder::PossibleValue::new("done")),
+            TaskStatus::Todo => Some(clap::builder::PossibleValue::new("todo")),
+            TaskStatus::Skip => Some(clap::builder::PossibleValue::new("skip")),
+            TaskStatus::InProgress => Some(clap::builder::PossibleValue::new("in_progress")),
+            TaskStatus::Done => Some(clap::builder::PossibleValue::new("done")),
         }
     }
 }
@@ -132,10 +162,10 @@ impl TaskVec {
                     name: row.get(1)?,
                     description: row.get(2)?,
                     status: match row.get::<_, String>(3)?.as_str() {
-                        "todo" => Status::Todo,
-                        "skip" => Status::Skip,
-                        "in_progress" => Status::InProgress,
-                        "done" => Status::Done,
+                        "todo" => TaskStatus::Todo,
+                        "skip" => TaskStatus::Skip,
+                        "in_progress" => TaskStatus::InProgress,
+                        "done" => TaskStatus::Done,
                         _ => {
                             return Err(rusqlite::Error::InvalidColumnType(
                                 3,
@@ -231,7 +261,7 @@ impl TaskVec {
         Ok(task)
     }
 
-    pub fn mark(&mut self, id: u64, status: &Status) -> Result<&Task, Error> {
+    pub fn mark(&mut self, id: u64, status: &TaskStatus) -> Result<&Task, Error> {
         let index = match self.tasks.iter().position(|task| task.id() == id) {
             Some(idx) => idx,
             None => return Err(Error::new(ErrorKind::NotFound, "task not found")),
@@ -242,13 +272,13 @@ impl TaskVec {
         Ok(task)
     }
 
-    pub fn list_by_status(&self, status: Option<Status>) -> Vec<&Task> {
+    pub fn list_by_status(&self, status: Option<&TaskStatus>) -> Vec<&Task> {
         match status {
             Some(s) => {
                 return self
                     .tasks
                     .iter()
-                    .filter(|task| *task.status() == s)
+                    .filter(|task| task.status() == s)
                     .collect();
             }
             None => {

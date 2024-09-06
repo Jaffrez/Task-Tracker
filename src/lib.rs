@@ -1,5 +1,4 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
-use task::Status;
 
 mod task;
 mod tui;
@@ -43,14 +42,15 @@ pub fn parse_args() -> ArgMatches {
                 .required(true)
                 .value_parser(value_parser!(u64)),
         )
-        .arg(
-            Arg::new("status")
-                .required(true)
-                .value_parser(value_parser!(Status)),
-        );
+        .arg(Arg::new("state").required(true).value_parser([
+            "todo",
+            "skip",
+            "in_progress",
+            "done",
+        ]));
     let list_command = Command::new("list")
         .about("List tasks by status")
-        .arg(Arg::new("status").value_parser(value_parser!(Status)));
+        .arg(Arg::new("state").value_parser(["todo", "skip", "in_progress", "done"]));
     let tui_command = Command::new("tui").about("Start TUI");
 
     Command::new("task-cli")

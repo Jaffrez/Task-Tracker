@@ -1,4 +1,4 @@
-use task::{Status, TaskVec};
+use task::{TaskStatus, TaskVec};
 use task_tracker::parse_args;
 use tui::run_tui;
 
@@ -37,7 +37,8 @@ fn main() {
         }
         Some(("mark", sub_matches)) => {
             let id = sub_matches.get_one::<u64>("id").unwrap();
-            let status = sub_matches.get_one::<Status>("status").unwrap();
+            let status = sub_matches.get_one::<String>("state").unwrap();
+            let status = TaskStatus::from_str(&status).unwrap();
             match tasks.mark(*id, status) {
                 Ok(_) => {}
                 Err(e) => {
@@ -46,8 +47,19 @@ fn main() {
             }
         }
         Some(("list", sub_matches)) => {
-            let status = sub_matches.get_one::<Status>("status").copied();
-            tasks.list_by_status(status);
+            let status = sub_matches.get_one::<String>("state").unwrap();
+            let status = TaskStatus::from_str(&status);
+            let result = tasks.list_by_status(status);
+            for task in result {
+                println!(
+                    "({}) {}\n    Status: {}\n    Created on: {}\n    Updated on: {}",
+                    task.id(),
+                    task.name(),
+                    task.status().to_string(),
+                    task.created(),
+                    task.updated()
+                );
+            }
         }
         Some(("tui", _)) => run_tui(&mut tasks, &path),
         _ => unreachable!(),
